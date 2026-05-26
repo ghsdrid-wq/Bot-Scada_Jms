@@ -101,9 +101,8 @@ DWSPDA.xlsx
 # Tech Stack
 
 - Python
-- Tkinter
+- PySide6
 - Requests
-- tkcalendar
 - Threading
 - ConfigParser
 
