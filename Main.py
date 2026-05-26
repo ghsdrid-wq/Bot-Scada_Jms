@@ -1,290 +1,256 @@
-import tkinter as tk
-from tkinter import ttk, filedialog
-import threading, time
-from tkcalendar import DateEntry
-from datetime import datetime, timedelta
-import requests
-import os
 import configparser
+import os
+import threading
+import time
+from datetime import datetime, timedelta
+
+import requests
+from PySide6.QtCore import QDate, QMetaObject, QObject, Qt, Signal
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QFileDialog,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QPlainTextEdit,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 CONFIG_FILE = "config.ini"
 
-class App(tk.Tk):
+
+class LogEmitter(QObject):
+    append = Signal(str)
+
+
+class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.title("Bot Export Scada&Jms")
-        self.geometry("650x450")
-        self.resizable(False, False)
+        self.setWindowTitle("Bot Export Scada&Jms")
+        self.resize(650, 450)
+
         self.scheduler_running = False
         self.job_running = False
         self.stop_requested = False
+        self.next_run = None
+
+        self.log_emitter = LogEmitter()
+        self.log_emitter.append.connect(self._append_log)
 
         self.create_ui()
         self.load_config()
-        
+
     def save_config(self):
         cfg = configparser.ConfigParser()
-
         cfg["API"] = {
-            "dws_url": self.dws_url.get(),
-            "dws_token": self.dws_token.get(),
-            "jms_token": self.jms_token.get(),
+            "dws_url": self.dws_url.text(),
+            "dws_token": self.dws_token.text(),
+            "jms_token": self.jms_token.text(),
         }
-
-        cfg["PATH"] = {
-            "path": self.path.get(),
-        }
-
+        cfg["PATH"] = {"path": self.path.text()}
         cfg["FILE"] = {
-            "name_dws": self.name_dws.get() or "DWS9-11.xlsx",
-            "name_auto": self.name_auto.get() or "DWSXAUTOPDA.xlsx",
-            "name_dwspda": self.name_dwspda.get() or "DWSPDA.xlsx",
+            "name_dws": self.name_dws.text() or "DWS9-11.xlsx",
+            "name_auto": self.name_auto.text() or "DWSXAUTOPDA.xlsx",
+            "name_dwspda": self.name_dwspda.text() or "DWSPDA.xlsx",
         }
+        cfg["TIME"] = {"run_minute": self.delay.currentText() or "5"}
 
-        cfg["TIME"] = {
-            "run_minute": self.delay.get() or "5"
-        }
-
-        with open(CONFIG_FILE, "w") as f:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             cfg.write(f)
-        
+
     def load_config(self):
         cfg = configparser.ConfigParser()
-
         if not os.path.exists(CONFIG_FILE):
-            cfg["API"] = {
-                "dws_url": "",
-                "dws_token": "",
-                "jms_token": "",
-            }
-
-            cfg["PATH"] = {
-                "path": ""
-            }
-
+            cfg["API"] = {"dws_url": "", "dws_token": "", "jms_token": ""}
+            cfg["PATH"] = {"path": ""}
             cfg["FILE"] = {
                 "name_dws": "DWS9-11.xlsx",
                 "name_auto": "DWSXAUTOPDA.xlsx",
                 "name_dwspda": "DWSPDA.xlsx",
             }
-
-            cfg["TIME"] = {
-                "run_minute": "5"
-            }
-
-            with open(CONFIG_FILE, "w") as f:
+            cfg["TIME"] = {"run_minute": "5"}
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 cfg.write(f)
-        # โหลดไฟล์
 
-        cfg.read(CONFIG_FILE)
+        cfg.read(CONFIG_FILE, encoding="utf-8")
 
         a = cfg["API"] if cfg.has_section("API") else {}
-        # set ค่า (ลบก่อน insert กันซ้ำ)
-        self.dws_url.delete(0, tk.END)
-        self.dws_url.insert(0, a.get("dws_url", ""))
-        self.dws_token.delete(0, tk.END)
-        self.dws_token.insert(0, a.get("dws_token", ""))
-        self.jms_token.delete(0, tk.END)
-        self.jms_token.insert(0, a.get("jms_token", ""))
+        self.dws_url.setText(a.get("dws_url", ""))
+        self.dws_token.setText(a.get("dws_token", ""))
+        self.jms_token.setText(a.get("jms_token", ""))
 
         p = cfg["PATH"] if cfg.has_section("PATH") else {}
-        self.path.delete(0, tk.END)
-        self.path.insert(0, p.get("path", ""))
+        self.path.setText(p.get("path", ""))
 
         f = cfg["FILE"] if cfg.has_section("FILE") else {}
-        self.name_dws.delete(0, tk.END)
-        self.name_dws.insert(0, f.get("name_dws", "DWS9-11.xlsx"))
-        self.name_auto.delete(0, tk.END)
-        self.name_auto.insert(0, f.get("name_auto", "DWSXAUTOPDA.xlsx"))
-        self.name_dwspda.delete(0, tk.END)
-        self.name_dwspda.insert(0, f.get("name_dwspda", "DWSPDA.xlsx"))
-        
+        self.name_dws.setText(f.get("name_dws", "DWS9-11.xlsx"))
+        self.name_auto.setText(f.get("name_auto", "DWSXAUTOPDA.xlsx"))
+        self.name_dwspda.setText(f.get("name_dwspda", "DWSPDA.xlsx"))
+
         t = cfg["TIME"] if cfg.has_section("TIME") else {}
-        self.delay.set(t.get("run_minute", "5"))
+        self.delay.setCurrentText(t.get("run_minute", "5"))
 
-    # ===== UI =====
     def create_ui(self):
-        notebook = ttk.Notebook(self)
-        notebook.pack(fill="both", expand=True)
+        root = QWidget()
+        self.setCentralWidget(root)
+        main_layout = QVBoxLayout(root)
 
-        self.tab_home = ttk.Frame(notebook)
-        self.tab_setting = ttk.Frame(notebook)
+        tabs = QTabWidget()
+        main_layout.addWidget(tabs)
 
-        notebook.add(self.tab_home, text="Home")
-        notebook.add(self.tab_setting, text="Setting")
+        self.tab_home = QWidget()
+        self.tab_setting = QWidget()
+        tabs.addTab(self.tab_home, "Home")
+        tabs.addTab(self.tab_setting, "Setting")
 
         self.build_home()
         self.build_setting()
 
-    # ===== HOME =====
     def build_home(self):
-        f = self.tab_home
+        layout = QVBoxLayout(self.tab_home)
+        self.status = QLabel("Status: Idle")
+        layout.addWidget(self.status)
 
-        # ===== ROW 1 : STATUS =====
-        self.status = ttk.Label(f, text="Status: Idle")
-        self.status.pack(anchor="w", padx=10, pady=5)
+        row = QGridLayout()
+        layout.addLayout(row)
 
-        # ===== FRAME =====
-        frame = ttk.Frame(f)
-        frame.pack(anchor="w", padx=10, pady=5)
-
-        # ===== DATA =====
         hours = [f"{i:02d}:00" for i in range(24)]
         minutes = [str(i) for i in range(60)]
 
-        # ===== ROW 2 : RUN MINUTE =====
-        ttk.Label(frame, text="Run minute").grid(row=0, column=0, sticky="w")
+        row.addWidget(QLabel("Run minute"), 0, 0)
+        self.delay = QComboBox()
+        self.delay.addItems(minutes)
+        self.delay.setCurrentText("5")
+        self.delay.setMaximumWidth(70)
+        row.addWidget(self.delay, 0, 1)
 
-        self.delay = ttk.Combobox(frame, values=minutes, width=5, state="readonly")
-        self.delay.grid(row=0, column=1, padx=5)
-        self.delay.set("5")
+        row.addWidget(QLabel("Start"), 1, 0)
+        self.start_date = QDateEdit()
+        self.start_date.setCalendarPopup(True)
+        self.start_date.setDisplayFormat("yyyy-MM-dd")
+        self.start_date.setDate(QDate.currentDate())
+        row.addWidget(self.start_date, 1, 1)
 
-        # ===== ROW : START → END + BUTTON =====
-        ttk.Label(frame, text="Start").grid(row=1, column=0, sticky="w")
+        self.start_hour = QComboBox()
+        self.start_hour.addItems(hours)
+        self.start_hour.setCurrentText("13:00")
+        self.start_hour.setMaximumWidth(80)
+        row.addWidget(self.start_hour, 1, 2)
 
-        self.start_date = DateEntry(frame, width=12, date_pattern="yyyy-mm-dd", state="readonly")
-        self.start_date.grid(row=1, column=1)
+        row.addWidget(QLabel("→"), 1, 3)
+        row.addWidget(QLabel("End"), 1, 4)
 
-        self.start_hour = ttk.Combobox(frame, values=hours, width=5, state="readonly")
-        self.start_hour.grid(row=1, column=2)
-        self.start_hour.set("13:00")
+        self.end_date = QDateEdit()
+        self.end_date.setCalendarPopup(True)
+        self.end_date.setDisplayFormat("yyyy-MM-dd")
+        self.end_date.setDate(QDate.currentDate().addDays(1))
+        row.addWidget(self.end_date, 1, 5)
 
-        ttk.Label(frame, text="→").grid(row=1, column=3, padx=5)
+        self.end_hour = QComboBox()
+        self.end_hour.addItems(hours)
+        self.end_hour.setCurrentText("23:00")
+        self.end_hour.setMaximumWidth(80)
+        row.addWidget(self.end_hour, 1, 6)
 
-        ttk.Label(frame, text="End").grid(row=1, column=4)
+        self.btn_start = QPushButton("Start")
+        self.btn_start.clicked.connect(self.toggle_start)
+        row.addWidget(self.btn_start, 1, 7)
 
-        self.end_date = DateEntry(frame, width=12, date_pattern="yyyy-mm-dd", state="readonly")
-        self.end_date.grid(row=1, column=5)
+        self.btn_run = QPushButton("Run Now")
+        self.btn_run.clicked.connect(self.toggle_run)
+        row.addWidget(self.btn_run, 1, 8)
 
-        # default date
-        today = datetime.now().date()
-        self.start_date.set_date(today)
-        self.end_date.set_date(today + timedelta(days=1))
-        
-        self.end_hour = ttk.Combobox(frame, values=hours, width=5, state="readonly")
-        self.end_hour.grid(row=1, column=6)
-        self.end_hour.set("23:00")
+        self.log_text = QPlainTextEdit()
+        self.log_text.setReadOnly(True)
+        layout.addWidget(self.log_text)
 
-        # ===== BUTTON =====
-        self.btn_start = ttk.Button(frame, text="Start", command=self.toggle_start)
-        self.btn_start.grid(row=1, column=7, padx=10)
-
-        self.btn_run = ttk.Button(frame, text="Run Now", command=self.toggle_run)
-        self.btn_run.grid(row=1, column=8)
-
-        # ===== LOG FRAME =====
-        log_frame = ttk.Frame(f)
-        log_frame.pack(fill="both", expand=True, padx=10, pady=5)
-
-        # Scrollbar
-        scrollbar = ttk.Scrollbar(log_frame)
-        scrollbar.pack(side="right", fill="y")
-
-        # Text (log)
-        self.log_text = tk.Text(log_frame, height=18, yscrollcommand=scrollbar.set)
-        self.log_text.pack(side="left", fill="both", expand=True)
-
-        # connect
-        scrollbar.config(command=self.log_text.yview)
-
-    # ===== SETTING =====
     def build_setting(self):
-        f = self.tab_setting
+        layout = QVBoxLayout(self.tab_setting)
 
-        # ===== DWS FRAME =====
-        dws_frame = ttk.LabelFrame(f, text="DWS9-11", padding=10)
-        dws_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
-        dws_frame.columnconfigure(1, weight=1)
+        dws_group = QGroupBox("DWS9-11")
+        dws_form = QFormLayout(dws_group)
+        self.dws_url = QLineEdit()
+        self.dws_token = QLineEdit()
+        dws_form.addRow("API URL", self.dws_url)
+        dws_form.addRow("Token", self.dws_token)
+        layout.addWidget(dws_group)
 
-        ttk.Label(dws_frame, text="API URL").grid(row=0, column=0, sticky="w")
-        self.dws_url = ttk.Entry(dws_frame, width=50)
-        self.dws_url.grid(row=0, column=1, pady=5, sticky="ew")
+        jms_group = QGroupBox("JMS")
+        jms_form = QFormLayout(jms_group)
+        self.jms_token = QLineEdit()
+        jms_form.addRow("AuthToken", self.jms_token)
+        layout.addWidget(jms_group)
 
-        ttk.Label(dws_frame, text="Token").grid(row=1, column=0, sticky="w")
-        self.dws_token = ttk.Entry(dws_frame, width=50)
-        self.dws_token.grid(row=1, column=1, pady=5, sticky="ew")
+        path_group = QGroupBox("Output")
+        path_layout = QHBoxLayout(path_group)
+        self.path = QLineEdit()
+        self.btn_browse = QPushButton("Browse")
+        self.btn_browse.clicked.connect(self.browse)
+        path_layout.addWidget(QLabel("Save Path"))
+        path_layout.addWidget(self.path)
+        path_layout.addWidget(self.btn_browse)
+        layout.addWidget(path_group)
 
-        # ===== JMS FRAME =====
-        jms_frame = ttk.LabelFrame(f, text="JMS", padding=10)
-        jms_frame.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
-        jms_frame.columnconfigure(1, weight=1)
+        out_group = QGroupBox("PATH")
+        out_form = QFormLayout(out_group)
+        self.name_dws = QLineEdit()
+        self.name_auto = QLineEdit()
+        self.name_dwspda = QLineEdit()
+        out_form.addRow("DWS File", self.name_dws)
+        out_form.addRow("AUTOPDA File", self.name_auto)
+        out_form.addRow("DWSPDA File", self.name_dwspda)
+        layout.addWidget(out_group)
+        layout.addStretch()
 
-        ttk.Label(jms_frame, text="AuthToken").grid(row=0, column=0, sticky="w")
-        self.jms_token = ttk.Entry(jms_frame, width=50)
-        self.jms_token.grid(row=0, column=1, pady=5, sticky="ew")
+    def _ui_call(self, fn):
+        QMetaObject.invokeMethod(self, lambda: fn(), Qt.QueuedConnection)
 
-        # ===== PATH FRAME =====
-        path_frame = ttk.LabelFrame(f, text="Output", padding=10)
-        path_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
-        path_frame.columnconfigure(1, weight=1)
-
-        ttk.Label(path_frame, text="Save Path").grid(row=0, column=0, sticky="w")
-        self.path = ttk.Entry(path_frame, width=45)
-        self.path.grid(row=0, column=1, pady=5, sticky="ew")
-
-        self.btn_browse = ttk.Button(path_frame, text="Browse", command=self.browse)
-        self.btn_browse.grid(row=0, column=2, padx=5)
-
-        # ===== OUTPUT FRAME =====
-        output_frame = ttk.LabelFrame(f, text="PATH", padding=10)
-        output_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
-        output_frame.columnconfigure(1, weight=1)
-
-        ttk.Label(output_frame, text="DWS File").grid(row=1, column=0)
-        self.name_dws = ttk.Entry(output_frame, width=45)
-        self.name_dws.grid(row=1, column=1, sticky="ew")
-
-        ttk.Label(output_frame, text="AUTOPDA File").grid(row=2, column=0)
-        self.name_auto = ttk.Entry(output_frame, width=45)
-        self.name_auto.grid(row=2, column=1, sticky="ew")
-
-        ttk.Label(output_frame, text="DWSPDA File").grid(row=3, column=0)
-        self.name_dwspda = ttk.Entry(output_frame, width=45)
-        self.name_dwspda.grid(row=3, column=1, sticky="ew")
-        # ให้ stretch
-        f.columnconfigure(0, weight=1)
+    def _append_log(self, text):
+        self.log_text.appendPlainText(text)
 
     def toggle_start(self):
         if not self.scheduler_running:
             self.start()
-            self.btn_start.config(text="Stop")
+            self.btn_start.setText("Stop")
         else:
             self.stop()
-            self.btn_start.config(text="Start")
-    
+            self.btn_start.setText("Start")
+
     def toggle_run(self):
         if self.job_running:
             self.stop_requested = True
-            self.status.config(text="Status: Stopping...")
-            self.btn_run.config(text="Run Now")
+            self.status.setText("Status: Stopping...")
+            self.btn_run.setText("Run Now")
             return
 
         self.stop_requested = False
         threading.Thread(target=self.execute_pipeline, daemon=True).start()
-        self.btn_run.config(text="Stop")
+        self.btn_run.setText("Stop")
 
-    # ===== UTIL =====
     def log(self, msg, tag="SYS"):
         now = datetime.now().strftime("%H:%M:%S")
-        text = f"{now} [{tag}] {msg}\n"
-        self.log_text.insert("end", text)
-        self.log_text.see("end")
+        self.log_emitter.append.emit(f"{now} [{tag}] {msg}")
 
     def browse(self):
-        p = filedialog.askdirectory()
-        if p:
-            self.path.delete(0, tk.END)
-            self.path.insert(0, p)
+        path = QFileDialog.getExistingDirectory(self, "Select output path")
+        if path:
+            self.path.setText(path)
 
-    # ====== ใส่ LOGIC จริงของคุณตรงนี้ ======
     def run_dws(self):
         self.log("Start DWS request...", "DWS9-11")
-
         start, end = self.get_time_range()
-
         try:
-            url = self.dws_url.get().strip()
-            token = self.dws_token.get().strip()
+            url = self.dws_url.text().strip()
+            token = self.dws_token.text().strip()
             data = {
                 "startTime": start,
                 "endTime": end,
@@ -292,84 +258,65 @@ class App(tk.Tk):
                 "businessTimeType": "",
                 "dbCode": "2",
                 "curPage": 1,
-                "pageSize": 20
+                "pageSize": 20,
             }
             headers = {
                 "Content-Type": "application/json;charset=UTF-8",
                 "token": token,
                 "Origin": "http://10.30.32.10",
                 "Referer": "http://10.30.32.10/",
-                "User-Agent": "Mozilla/5.0"
+                "User-Agent": "Mozilla/5.0",
             }
-
             res = requests.post(url, json=data, headers=headers, timeout=(5, 10))
-
-            # DEBUG
             self.log(f"STATUS: {res.status_code}", "DWS9-11")
             self.log(f"SIZE: {len(res.content)}", "DWS9-11")
-            #self.log(f"RESP: {res.text[:200]}", "DWS9-11")
-
             if res.status_code == 200 and len(res.content) > 100:
-                os.makedirs(self.path.get(), exist_ok=True)
-                path = os.path.join(self.path.get(), self.name_dws.get())
-                with open(path, "wb") as f:
+                os.makedirs(self.path.text(), exist_ok=True)
+                out = os.path.join(self.path.text(), self.name_dws.text())
+                with open(out, "wb") as f:
                     f.write(res.content)
-
-                self.log(f"Downloaded: {self.name_dws.get()}")
+                self.log(f"Downloaded: {self.name_dws.text()}")
             else:
-                self.after(0, lambda: self.log(f"Download failed: {res.text[:200]}"))
-                self.after(0, lambda: self.status.config(text="Error"))
-
+                self.log(f"Download failed: {res.text[:200]}")
+                self.status.setText("Status: Error")
         except Exception as e:
-            self.after(0, lambda: self.log(f"ERROR: {e}"))
-            self.after(0, lambda: self.status.config(text="Error"))
-
+            self.log(f"ERROR: {e}")
+            self.status.setText("Status: Error")
         finally:
             self.log("DWS finished", "SYS")
 
-
     def run_jms_auto(self):
         base = "https://jmsgw.jtexpress.co.th/operatingplatform"
-        token = self.jms_token.get().strip()
-
-        headers = {
-            "Content-Type": "application/json;charset=UTF-8",
-            "authtoken": token
-        }
-
+        token = self.jms_token.text().strip()
+        headers = {"Content-Type": "application/json;charset=UTF-8", "authtoken": token}
         start, end = self.get_time_range()
-
-        self._export_jms(base, headers, start, end, "建包扫描", self.name_auto.get())
-
+        self._export_jms(base, headers, start, end, "建包扫描", self.name_auto.text())
 
     def run_jms_pda(self):
         base = "https://jmsgw.jtexpress.co.th/operatingplatform"
-        token = self.jms_token.get().strip()
-
-        headers = {
-            "Content-Type": "application/json;charset=UTF-8",
-            "authtoken": token
-        }
-
+        token = self.jms_token.text().strip()
+        headers = {"Content-Type": "application/json;charset=UTF-8", "authtoken": token}
         start, end = self.get_time_range()
+        self._export_jms(base, headers, start, end, "卸车扫描", self.name_dwspda.text())
 
-        self._export_jms(base, headers, start, end, "卸车扫描", self.name_dwspda.get())
-
-    def _export_jms(self, base, headers, start, end, scanType, filename):
+    def _export_jms(self, base, headers, start, end, scan_type, filename):
         self.log(f"Generate {filename}", "JMS")
-
         run_time = datetime.now()
-
         target_hour = run_time.replace(minute=0, second=0, microsecond=0)
         next_hour = target_hour + timedelta(hours=1)
 
-        res = requests.post(f"{base}/scanningContrast/asyncDownExcel", json={
-            "startTimeStr": start,
-            "endTimeStr": end,
-            "scanNetworkCode": "999004",
-            "scanType": scanType,
-            "excelType": "downExcelAll"
-        }, headers=headers, timeout=(5, 10))
+        res = requests.post(
+            f"{base}/scanningContrast/asyncDownExcel",
+            json={
+                "startTimeStr": start,
+                "endTimeStr": end,
+                "scanNetworkCode": "999004",
+                "scanType": scan_type,
+                "excelType": "downExcelAll",
+            },
+            headers=headers,
+            timeout=(5, 10),
+        )
 
         if "login" in res.text.lower():
             self.log("JMS Token expired (generate)", "ERROR")
@@ -386,65 +333,50 @@ class App(tk.Tk):
             if not self.sleep_with_stop(10):
                 return
 
-            res = requests.post(f"{base}/downLoadCenter/downLoadInfoList", json={
-                "current": 1,
-                "size": 20
-            }, headers=headers, timeout=(5, 10))
+            res = requests.post(
+                f"{base}/downLoadCenter/downLoadInfoList",
+                json={"current": 1, "size": 20},
+                headers=headers,
+                timeout=(5, 10),
+            )
 
-            # CHECK TOKEN
             if "login" in res.text.lower():
                 self.log("JMS Token expired (list)", "ERROR")
                 raise Exception("Token expired")
 
-            res = res.json()
-
-            records = res.get("data", {}).get("records", [])
+            records = res.json().get("data", {}).get("records", [])
             records.sort(key=lambda x: x.get("downTime", ""), reverse=True)
 
             for r in records:
                 try:
-                    down_time = datetime.strptime(
-                        r.get("downTime"), "%Y-%m-%d %H:%M:%S"
-                    )
-                except:
+                    down_time = datetime.strptime(r.get("downTime"), "%Y-%m-%d %H:%M:%S")
+                except Exception:
                     continue
 
                 self.log(f"Check: {r.get('downTime')} | finish={r.get('finishOrNot')}", "DEBUG")
-
                 if (
-                    scanType in r.get("queryJson", "")
+                    scan_type in r.get("queryJson", "")
                     and r.get("finishOrNot") == "1"
                     and r.get("downUrl")
                     and target_hour <= down_time < next_hour
                     and down_time >= run_time - timedelta(minutes=7)
                 ):
-                    self.log(f"Matched file: {down_time}", "DEBUG")
-
                     sign_res = requests.post(
                         f"{base}/downLoadCenter/getDownloadSignedUrl",
                         json=r,
                         headers=headers,
-                        timeout=(5, 10)
+                        timeout=(5, 10),
                     )
-
                     if "login" in sign_res.text.lower():
                         self.log("JMS Token expired (signedUrl)", "ERROR")
                         raise Exception("Token expired")
 
-                    sign = sign_res.json()
-
-                    url = sign.get("data")
+                    url = sign_res.json().get("data")
                     if not url:
                         continue
 
-                    file = requests.get(
-                        url if isinstance(url, str) else url[0],
-                        timeout=(5,10)
-                    )
-
-                    # CHECK TOKEN / HTML
+                    file = requests.get(url if isinstance(url, str) else url[0], timeout=(5, 10))
                     content_type = file.headers.get("Content-Type", "").lower()
-
                     if "html" in content_type or "login" in file.text.lower():
                         self.log("JMS Token expired (download)", "ERROR")
                         raise Exception("Token expired")
@@ -453,46 +385,23 @@ class App(tk.Tk):
                         self.log("File not ready, retry...", "JMS")
                         continue
 
-                    os.makedirs(self.path.get(), exist_ok=True)
-                    path = os.path.join(self.path.get(), filename)
-
-                    with open(path, "wb") as f:
+                    os.makedirs(self.path.text(), exist_ok=True)
+                    out = os.path.join(self.path.text(), filename)
+                    with open(out, "wb") as f:
                         f.write(file.content)
-
                     self.log(f"Downloaded {filename}", "JMS")
                     return
 
         raise Exception(f"{filename} fail")
-        
-    def run_now(self):
-        if not self.validate():
-            self.log("Missing config", "SYS")
-            return
-
-        if not self.validate_time():
-            self.log("Invalid time range (Start > End)", "SYS")
-            return
-
-        if self.job_running:
-            return
-        
-        threading.Thread(target=self.execute_pipeline, daemon=True).start()
 
     def get_time_range(self):
-        start_str = f"{self.start_date.get()} {self.start_hour.get()}"
-        end_str   = f"{self.end_date.get()} {self.end_hour.get()}"
-
+        start_str = f"{self.start_date.date().toString('yyyy-MM-dd')} {self.start_hour.currentText()}"
+        end_str = f"{self.end_date.date().toString('yyyy-MM-dd')} {self.end_hour.currentText()}"
         start = datetime.strptime(start_str, "%Y-%m-%d %H:%M")
-        end   = datetime.strptime(end_str, "%Y-%m-%d %H:%M")
-
-        # FIX สำคัญ: auto swap
+        end = datetime.strptime(end_str, "%Y-%m-%d %H:%M")
         if start > end:
             start, end = end, start
-
-        return (
-            start.strftime("%Y-%m-%d %H:%M:%S"),
-            end.strftime("%Y-%m-%d %H:%M:%S")
-        )
+        return start.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S")
 
     def sleep_with_stop(self, seconds):
         for _ in range(seconds):
@@ -501,40 +410,29 @@ class App(tk.Tk):
             time.sleep(1)
         return True
 
-        # ===== NEW MAIN LOOP =====
     def main_loop(self):
         self.log("Main loop started", "SYS")
-
-        run_minute = int(self.delay.get())
-
-        # init รอบแรก
-        if not hasattr(self, "next_run") or self.next_run is None:
+        run_minute = int(self.delay.currentText())
+        if self.next_run is None:
             now = datetime.now()
             self.next_run = now.replace(minute=run_minute, second=0, microsecond=0)
-
             if now > self.next_run + timedelta(seconds=30):
                 self.next_run += timedelta(hours=1)
 
         while self.scheduler_running:
             self.log(f"Next run at {self.next_run.strftime('%H:%M:%S')}", "SYS")
-
-            # รอเวลา
             while datetime.now() < self.next_run:
                 if not self.scheduler_running:
                     return
                 time.sleep(1)
 
-            # ยิงงาน
             if not self.job_running:
                 self.log("Run job", "SYS")
                 threading.Thread(target=self.execute_pipeline, daemon=True).start()
             else:
                 self.log("Skip: previous job still running", "SYS")
-
-            # ไปชั่วโมงถัดไป
             self.next_run += timedelta(hours=1)
 
-    # ===== NEW PIPELINE =====
     def execute_pipeline(self):
         if self.job_running:
             self.log("Skip: job running", "SYS")
@@ -542,123 +440,88 @@ class App(tk.Tk):
 
         self.job_running = True
         self.save_config()
-        self.set_ui(False)
-        self.status.config(text="Status: Running")
+        self._ui_call(lambda: self.set_ui(False))
+        self._ui_call(lambda: self.status.setText("Status: Running"))
 
         try:
             if self.stop_requested:
                 return
-        
             self.run_dws()
-
             if self.stop_requested:
                 return
-
             if not self.sleep_with_stop(5):
                 raise Exception("Stopped")
-            
-            if self.stop_requested:
-                return
-
             self.run_jms_auto()
-
             if self.stop_requested:
                 return
-
             if not self.sleep_with_stop(5):
                 raise Exception("Stopped")
-            
-            if self.stop_requested:
-                return
-
             self.run_jms_pda()
-
-            self.status.config(text="Status: Success")
-
+            self._ui_call(lambda: self.status.setText("Status: Success"))
         except Exception as e:
             self.log(f"ERROR: {e}", "SYS")
-            self.status.config(text="Status: Error")
-
+            self._ui_call(lambda: self.status.setText("Status: Error"))
         finally:
             self.job_running = False
             self.stop_requested = False
-            if self.scheduler_running and hasattr(self, "next_run") and self.next_run:
+            if self.scheduler_running and self.next_run:
                 self.log("Finished", "SYS")
                 self.log(f"Next run at {self.next_run.strftime('%H:%M:%S')}", "SYS")
-
-            self.after(0, lambda: self.btn_run.config(text="Run Now"))
-
-            # reset ปุ่ม Run Now
+            self._ui_call(lambda: self.btn_run.setText("Run Now"))
             if not self.scheduler_running:
-                self.set_ui(True)
+                self._ui_call(lambda: self.set_ui(True))
 
     def start(self):
         if self.scheduler_running:
             return
-
         self.stop_requested = False
         self.scheduler_running = True
         self.next_run = None
-
-        self.set_ui(False)   # เพิ่มตรงนี้
-
+        self.set_ui(False)
         threading.Thread(target=self.main_loop, daemon=True).start()
         self.log("Auto scheduler started")
-        self.btn_start.config(text="Stop")
+        self.btn_start.setText("Stop")
 
     def stop(self):
         self.scheduler_running = False
         self.stop_requested = True
+        self.status.setText("Status: Stopped")
+        self.set_ui(True)
+        self.btn_start.setText("Start")
+        self.btn_run.setText("Run Now")
 
-        self.status.config(text="Status: Stopped")
-
-        self.set_ui(True)   # เปิด UI กลับแน่นอน
-
-        self.btn_start.config(text="Start")
-        self.btn_run.config(text="Run Now")
-        
     def set_ui(self, enable):
-        state = "normal" if enable else "disabled"
+        for w in [
+            self.dws_url,
+            self.dws_token,
+            self.jms_token,
+            self.path,
+            self.start_date,
+            self.end_date,
+            self.start_hour,
+            self.end_hour,
+            self.delay,
+            self.name_dws,
+            self.name_auto,
+            self.name_dwspda,
+            self.btn_browse,
+        ]:
+            w.setEnabled(enable)
 
-        # disable input
-        self.dws_url.config(state=state)
-        self.dws_token.config(state=state)
-        self.jms_token.config(state=state)
-        self.path.config(state=state)
-
-        self.start_date.config(state=state)
-        self.end_date.config(state=state)
-        self.start_hour.config(state=state)
-        self.end_hour.config(state=state)
-        self.delay.config(state=state)
-
-        self.name_dws.config(state=state)
-        self.name_auto.config(state=state)
-        self.name_dwspda.config(state=state)
-
-        self.btn_browse.config(state=state)
-
-        # ปุ่มควบคุม = กดได้ตลอด
-        self.btn_run.config(state="normal")
-        self.btn_start.config(state="normal")
-
+        self.btn_run.setEnabled(True)
+        self.btn_start.setEnabled(True)
 
     def validate(self):
-        if not self.dws_url.get():
-            return False
-        if not self.dws_token.get():
-            return False
-        if not self.jms_token.get():
-            return False
-        if not self.path.get():
-            return False
-        return True
-    
-    def validate_time(self):
-        start = datetime.strptime(f"{self.start_date.get()} {self.start_hour.get()}", "%Y-%m-%d %H:%M")
-        end   = datetime.strptime(f"{self.end_date.get()} {self.end_hour.get()}", "%Y-%m-%d %H:%M")
+        return all([
+            self.dws_url.text().strip(),
+            self.dws_token.text().strip(),
+            self.jms_token.text().strip(),
+            self.path.text().strip(),
+        ])
 
-        return start <= end
-# ===== RUN =====
+
 if __name__ == "__main__":
-    App().mainloop()
+    app = QApplication([])
+    win = App()
+    win.show()
+    app.exec()
