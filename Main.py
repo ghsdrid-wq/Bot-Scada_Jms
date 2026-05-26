@@ -151,6 +151,7 @@ class App(QMainWindow):
         self.start_date.setCalendarPopup(True)
         self.start_date.setDisplayFormat("yyyy-MM-dd")
         self.start_date.setDate(QDate.currentDate())
+        self.start_date.setMinimumWidth(170)
         form.addWidget(self.start_date, 1, 1)
 
         self.start_hour = QComboBox()
@@ -165,6 +166,7 @@ class App(QMainWindow):
         self.end_date.setCalendarPopup(True)
         self.end_date.setDisplayFormat("yyyy-MM-dd")
         self.end_date.setDate(QDate.currentDate().addDays(1))
+        self.end_date.setMinimumWidth(170)
         form.addWidget(self.end_date, 1, 5)
 
         self.end_hour = QComboBox()
