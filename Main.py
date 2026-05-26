@@ -5,16 +5,34 @@ from datetime import datetime, timedelta
 import requests
 import os
 import configparser
-from PySide6 import QtCore, QtWidgets
+from PySide6.QtCore import QDate, QTimer
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QFileDialog,
+    QFormLayout,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QPushButton,
+    QTextEdit,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 CONFIG_FILE = "config.ini"
 
 
-class App(QtWidgets.QMainWindow):
+class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Bot Export Scada&Jms")
-        self.setFixedSize(650, 450)
+        self.setFixedSize(750, 450)
         self.scheduler_running = False
         self.job_running = False
         self.stop_requested = False
@@ -84,11 +102,11 @@ class App(QtWidgets.QMainWindow):
             self.delay.setCurrentIndex(idx)
 
     def create_ui(self):
-        tabs = QtWidgets.QTabWidget()
+        tabs = QTabWidget()
         self.setCentralWidget(tabs)
 
-        self.tab_home = QtWidgets.QWidget()
-        self.tab_setting = QtWidgets.QWidget()
+        self.tab_home = QWidget()
+        self.tab_setting = QWidget()
 
         tabs.addTab(self.tab_home, "Home")
         tabs.addTab(self.tab_setting, "Setting")
@@ -97,94 +115,94 @@ class App(QtWidgets.QMainWindow):
         self.build_setting()
 
     def build_home(self):
-        root = QtWidgets.QVBoxLayout(self.tab_home)
-        self.status = QtWidgets.QLabel("Status: Idle")
+        root = QVBoxLayout(self.tab_home)
+        self.status = QLabel("Status: Idle")
         root.addWidget(self.status)
 
-        form_wrap = QtWidgets.QWidget()
-        form = QtWidgets.QGridLayout(form_wrap)
+        form_wrap = QWidget()
+        form = QGridLayout(form_wrap)
         root.addWidget(form_wrap)
 
         hours = [f"{i:02d}:00" for i in range(24)]
         minutes = [str(i) for i in range(60)]
 
-        form.addWidget(QtWidgets.QLabel("Run minute"), 0, 0)
-        self.delay = QtWidgets.QComboBox()
+        form.addWidget(QLabel("Run minute"), 0, 0)
+        self.delay = QComboBox()
         self.delay.addItems(minutes)
         self.delay.setCurrentText("5")
         self.delay.setFixedWidth(60)
         form.addWidget(self.delay, 0, 1)
 
-        form.addWidget(QtWidgets.QLabel("Start"), 1, 0)
-        self.start_date = QtWidgets.QDateEdit()
+        form.addWidget(QLabel("Start"), 1, 0)
+        self.start_date = QDateEdit()
         self.start_date.setCalendarPopup(True)
         self.start_date.setDisplayFormat("yyyy-MM-dd")
-        self.start_date.setDate(QtCore.QDate.currentDate())
+        self.start_date.setDate(QDate.currentDate())
         form.addWidget(self.start_date, 1, 1)
 
-        self.start_hour = QtWidgets.QComboBox()
+        self.start_hour = QComboBox()
         self.start_hour.addItems(hours)
         self.start_hour.setCurrentText("13:00")
         form.addWidget(self.start_hour, 1, 2)
 
-        form.addWidget(QtWidgets.QLabel("→"), 1, 3)
-        form.addWidget(QtWidgets.QLabel("End"), 1, 4)
+        form.addWidget(QLabel("→"), 1, 3)
+        form.addWidget(QLabel("End"), 1, 4)
 
-        self.end_date = QtWidgets.QDateEdit()
+        self.end_date = QDateEdit()
         self.end_date.setCalendarPopup(True)
         self.end_date.setDisplayFormat("yyyy-MM-dd")
-        self.end_date.setDate(QtCore.QDate.currentDate().addDays(1))
+        self.end_date.setDate(QDate.currentDate().addDays(1))
         form.addWidget(self.end_date, 1, 5)
 
-        self.end_hour = QtWidgets.QComboBox()
+        self.end_hour = QComboBox()
         self.end_hour.addItems(hours)
         self.end_hour.setCurrentText("23:00")
         form.addWidget(self.end_hour, 1, 6)
 
-        self.btn_start = QtWidgets.QPushButton("Start")
+        self.btn_start = QPushButton("Start")
         self.btn_start.clicked.connect(self.toggle_start)
         form.addWidget(self.btn_start, 1, 7)
 
-        self.btn_run = QtWidgets.QPushButton("Run Now")
+        self.btn_run = QPushButton("Run Now")
         self.btn_run.clicked.connect(self.toggle_run)
         form.addWidget(self.btn_run, 1, 8)
 
-        self.log_text = QtWidgets.QTextEdit()
+        self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         root.addWidget(self.log_text)
 
     def build_setting(self):
-        root = QtWidgets.QVBoxLayout(self.tab_setting)
+        root = QVBoxLayout(self.tab_setting)
 
-        dws_group = QtWidgets.QGroupBox("DWS9-11")
-        dws_form = QtWidgets.QFormLayout(dws_group)
-        self.dws_url = QtWidgets.QLineEdit()
-        self.dws_token = QtWidgets.QLineEdit()
+        dws_group = QGroupBox("DWS9-11")
+        dws_form = QFormLayout(dws_group)
+        self.dws_url = QLineEdit()
+        self.dws_token = QLineEdit()
         dws_form.addRow("API URL", self.dws_url)
         dws_form.addRow("Token", self.dws_token)
         root.addWidget(dws_group)
 
-        jms_group = QtWidgets.QGroupBox("JMS")
-        jms_form = QtWidgets.QFormLayout(jms_group)
-        self.jms_token = QtWidgets.QLineEdit()
+        jms_group = QGroupBox("JMS")
+        jms_form = QFormLayout(jms_group)
+        self.jms_token = QLineEdit()
         jms_form.addRow("AuthToken", self.jms_token)
         root.addWidget(jms_group)
 
-        path_group = QtWidgets.QGroupBox("Output")
-        path_layout = QtWidgets.QHBoxLayout(path_group)
-        path_layout.addWidget(QtWidgets.QLabel("Save Path"))
-        self.path = QtWidgets.QLineEdit()
+        path_group = QGroupBox("Output")
+        path_layout = QHBoxLayout(path_group)
+        path_layout.addWidget(QLabel("Save Path"))
+        self.path = QLineEdit()
         path_layout.addWidget(self.path)
-        self.btn_browse = QtWidgets.QPushButton("Browse")
+        self.btn_browse = QPushButton("Browse")
         self.btn_browse.clicked.connect(self.browse)
         path_layout.addWidget(self.btn_browse)
         root.addWidget(path_group)
 
-        output_group = QtWidgets.QGroupBox("PATH")
-        output_form = QtWidgets.QFormLayout(output_group)
-        self.name_dws = QtWidgets.QLineEdit()
-        self.name_auto = QtWidgets.QLineEdit()
-        self.name_dwspda = QtWidgets.QLineEdit()
+        output_group = QGroupBox("PATH")
+        output_form = QFormLayout(output_group)
+        self.name_dws = QLineEdit()
+        self.name_auto = QLineEdit()
+        self.name_dwspda = QLineEdit()
         output_form.addRow("DWS File", self.name_dws)
         output_form.addRow("AUTOPDA File", self.name_auto)
         output_form.addRow("DWSPDA File", self.name_dwspda)
@@ -214,7 +232,7 @@ class App(QtWidgets.QMainWindow):
         self.log_text.append(f"{now} [{tag}] {msg}")
 
     def browse(self):
-        p = QtWidgets.QFileDialog.getExistingDirectory(self, "Select Folder")
+        p = QFileDialog.getExistingDirectory(self, "Select Folder")
         if p:
             self.path.setText(p)
 
@@ -398,7 +416,7 @@ class App(QtWidgets.QMainWindow):
             if self.scheduler_running and hasattr(self, "next_run") and self.next_run:
                 self.log("Finished", "SYS")
                 self.log(f"Next run at {self.next_run.strftime('%H:%M:%S')}", "SYS")
-            QtCore.QTimer.singleShot(0, lambda: self.btn_run.setText("Run Now"))
+            QTimer.singleShot(0, lambda: self.btn_run.setText("Run Now"))
             if not self.scheduler_running:
                 self.set_ui(True)
 
@@ -437,7 +455,7 @@ class App(QtWidgets.QMainWindow):
 
 
 if __name__ == "__main__":
-    app = QtWidgets.QApplication(sys.argv)
+    app = QApplication(sys.argv)
     w = App()
     w.show()
     sys.exit(app.exec())
