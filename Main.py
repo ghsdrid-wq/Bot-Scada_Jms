@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 
 import requests
-from PySide6.QtCore import QDate, Qt, QTimer
+from PySide6.QtCore import QDate, QMetaObject, QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -28,43 +28,95 @@ from PySide6.QtWidgets import (
 CONFIG_FILE = "config.ini"
 
 
+class LogEmitter(QObject):
+    append = Signal(str)
+
+
 class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Bot Export Scada&Jms")
-        self.resize(700, 520)
+        self.resize(650, 450)
 
         self.scheduler_running = False
         self.job_running = False
         self.stop_requested = False
-        self.log_queue = []
+        self.next_run = None
+
+        self.log_emitter = LogEmitter()
+        self.log_emitter.append.connect(self._append_log)
 
         self.create_ui()
         self.load_config()
 
-        self.log_timer = QTimer(self)
-        self.log_timer.timeout.connect(self.flush_log)
-        self.log_timer.start(200)
+    def save_config(self):
+        cfg = configparser.ConfigParser()
+        cfg["API"] = {
+            "dws_url": self.dws_url.text(),
+            "dws_token": self.dws_token.text(),
+            "jms_token": self.jms_token.text(),
+        }
+        cfg["PATH"] = {"path": self.path.text()}
+        cfg["FILE"] = {
+            "name_dws": self.name_dws.text() or "DWS9-11.xlsx",
+            "name_auto": self.name_auto.text() or "DWSXAUTOPDA.xlsx",
+            "name_dwspda": self.name_dwspda.text() or "DWSPDA.xlsx",
+        }
+        cfg["TIME"] = {"run_minute": self.delay.currentText() or "5"}
+
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+            cfg.write(f)
+
+    def load_config(self):
+        cfg = configparser.ConfigParser()
+        if not os.path.exists(CONFIG_FILE):
+            cfg["API"] = {"dws_url": "", "dws_token": "", "jms_token": ""}
+            cfg["PATH"] = {"path": ""}
+            cfg["FILE"] = {
+                "name_dws": "DWS9-11.xlsx",
+                "name_auto": "DWSXAUTOPDA.xlsx",
+                "name_dwspda": "DWSPDA.xlsx",
+            }
+            cfg["TIME"] = {"run_minute": "5"}
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                cfg.write(f)
+
+        cfg.read(CONFIG_FILE, encoding="utf-8")
+
+        a = cfg["API"] if cfg.has_section("API") else {}
+        self.dws_url.setText(a.get("dws_url", ""))
+        self.dws_token.setText(a.get("dws_token", ""))
+        self.jms_token.setText(a.get("jms_token", ""))
+
+        p = cfg["PATH"] if cfg.has_section("PATH") else {}
+        self.path.setText(p.get("path", ""))
+
+        f = cfg["FILE"] if cfg.has_section("FILE") else {}
+        self.name_dws.setText(f.get("name_dws", "DWS9-11.xlsx"))
+        self.name_auto.setText(f.get("name_auto", "DWSXAUTOPDA.xlsx"))
+        self.name_dwspda.setText(f.get("name_dwspda", "DWSPDA.xlsx"))
+
+        t = cfg["TIME"] if cfg.has_section("TIME") else {}
+        self.delay.setCurrentText(t.get("run_minute", "5"))
 
     def create_ui(self):
         root = QWidget()
         self.setCentralWidget(root)
         main_layout = QVBoxLayout(root)
 
-        self.notebook = QTabWidget()
-        main_layout.addWidget(self.notebook)
+        tabs = QTabWidget()
+        main_layout.addWidget(tabs)
 
         self.tab_home = QWidget()
         self.tab_setting = QWidget()
-        self.notebook.addTab(self.tab_home, "Home")
-        self.notebook.addTab(self.tab_setting, "Setting")
+        tabs.addTab(self.tab_home, "Home")
+        tabs.addTab(self.tab_setting, "Setting")
 
         self.build_home()
         self.build_setting()
 
     def build_home(self):
         layout = QVBoxLayout(self.tab_home)
-
         self.status = QLabel("Status: Idle")
         layout.addWidget(self.status)
 
@@ -78,6 +130,7 @@ class App(QMainWindow):
         self.delay = QComboBox()
         self.delay.addItems(minutes)
         self.delay.setCurrentText("5")
+        self.delay.setMaximumWidth(70)
         row.addWidget(self.delay, 0, 1)
 
         row.addWidget(QLabel("Start"), 1, 0)
@@ -90,6 +143,7 @@ class App(QMainWindow):
         self.start_hour = QComboBox()
         self.start_hour.addItems(hours)
         self.start_hour.setCurrentText("13:00")
+        self.start_hour.setMaximumWidth(80)
         row.addWidget(self.start_hour, 1, 2)
 
         row.addWidget(QLabel("→"), 1, 3)
@@ -104,6 +158,7 @@ class App(QMainWindow):
         self.end_hour = QComboBox()
         self.end_hour.addItems(hours)
         self.end_hour.setCurrentText("23:00")
+        self.end_hour.setMaximumWidth(80)
         row.addWidget(self.end_hour, 1, 6)
 
         self.btn_start = QPushButton("Start")
@@ -145,78 +200,23 @@ class App(QMainWindow):
         path_layout.addWidget(self.btn_browse)
         layout.addWidget(path_group)
 
-        output_group = QGroupBox("PATH")
-        output_form = QFormLayout(output_group)
+        out_group = QGroupBox("PATH")
+        out_form = QFormLayout(out_group)
         self.name_dws = QLineEdit()
         self.name_auto = QLineEdit()
         self.name_dwspda = QLineEdit()
-        output_form.addRow("DWS File", self.name_dws)
-        output_form.addRow("AUTOPDA File", self.name_auto)
-        output_form.addRow("DWSPDA File", self.name_dwspda)
-        layout.addWidget(output_group)
-
+        out_form.addRow("DWS File", self.name_dws)
+        out_form.addRow("AUTOPDA File", self.name_auto)
+        out_form.addRow("DWSPDA File", self.name_dwspda)
+        layout.addWidget(out_group)
         layout.addStretch()
 
-    def log(self, msg, tag="SYS"):
-        now = datetime.now().strftime("%H:%M:%S")
-        self.log_queue.append(f"{now} [{tag}] {msg}")
+    def _ui_call(self, fn):
+        QMetaObject.invokeMethod(self, lambda: fn(), Qt.QueuedConnection)
 
-    def flush_log(self):
-        if not self.log_queue:
-            return
-        self.log_text.appendPlainText("\n".join(self.log_queue))
-        self.log_queue.clear()
+    def _append_log(self, text):
+        self.log_text.appendPlainText(text)
 
-    def browse(self):
-        p = QFileDialog.getExistingDirectory(self, "Select Folder")
-        if p:
-            self.path.setText(p)
-
-    def save_config(self):
-        cfg = configparser.ConfigParser()
-        cfg["API"] = {
-            "dws_url": self.dws_url.text(),
-            "dws_token": self.dws_token.text(),
-            "jms_token": self.jms_token.text(),
-        }
-        cfg["PATH"] = {"path": self.path.text()}
-        cfg["FILE"] = {
-            "name_dws": self.name_dws.text() or "DWS9-11.xlsx",
-            "name_auto": self.name_auto.text() or "DWSXAUTOPDA.xlsx",
-            "name_dwspda": self.name_dwspda.text() or "DWSPDA.xlsx",
-        }
-        cfg["TIME"] = {"run_minute": self.delay.currentText() or "5"}
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            cfg.write(f)
-
-    def load_config(self):
-        cfg = configparser.ConfigParser()
-        if not os.path.exists(CONFIG_FILE):
-            cfg["API"] = {"dws_url": "", "dws_token": "", "jms_token": ""}
-            cfg["PATH"] = {"path": ""}
-            cfg["FILE"] = {"name_dws": "DWS9-11.xlsx", "name_auto": "DWSXAUTOPDA.xlsx", "name_dwspda": "DWSPDA.xlsx"}
-            cfg["TIME"] = {"run_minute": "5"}
-            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                cfg.write(f)
-
-        cfg.read(CONFIG_FILE, encoding="utf-8")
-        a = cfg["API"] if cfg.has_section("API") else {}
-        self.dws_url.setText(a.get("dws_url", ""))
-        self.dws_token.setText(a.get("dws_token", ""))
-        self.jms_token.setText(a.get("jms_token", ""))
-        p = cfg["PATH"] if cfg.has_section("PATH") else {}
-        self.path.setText(p.get("path", ""))
-        f = cfg["FILE"] if cfg.has_section("FILE") else {}
-        self.name_dws.setText(f.get("name_dws", "DWS9-11.xlsx"))
-        self.name_auto.setText(f.get("name_auto", "DWSXAUTOPDA.xlsx"))
-        self.name_dwspda.setText(f.get("name_dwspda", "DWSPDA.xlsx"))
-        t = cfg["TIME"] if cfg.has_section("TIME") else {}
-        self.delay.setCurrentText(t.get("run_minute", "5"))
-
-    def set_status(self, text):
-        self.status.setText(text)
-
-    # --- rest business logic stays same ---
     def toggle_start(self):
         if not self.scheduler_running:
             self.start()
@@ -226,14 +226,173 @@ class App(QMainWindow):
             self.btn_start.setText("Start")
 
     def toggle_run(self):
-        if not self.job_running:
-            self.stop_requested = False
-            self.run_now()
-            self.btn_run.setText("Stop")
-        else:
+        if self.job_running:
             self.stop_requested = True
-            self.set_status("Status: Stopping...")
+            self.status.setText("Status: Stopping...")
             self.btn_run.setText("Run Now")
+            return
+
+        self.stop_requested = False
+        threading.Thread(target=self.execute_pipeline, daemon=True).start()
+        self.btn_run.setText("Stop")
+
+    def log(self, msg, tag="SYS"):
+        now = datetime.now().strftime("%H:%M:%S")
+        self.log_emitter.append.emit(f"{now} [{tag}] {msg}")
+
+    def browse(self):
+        path = QFileDialog.getExistingDirectory(self, "Select output path")
+        if path:
+            self.path.setText(path)
+
+    def run_dws(self):
+        self.log("Start DWS request...", "DWS9-11")
+        start, end = self.get_time_range()
+        try:
+            url = self.dws_url.text().strip()
+            token = self.dws_token.text().strip()
+            data = {
+                "startTime": start,
+                "endTime": end,
+                "barcodeList": [],
+                "businessTimeType": "",
+                "dbCode": "2",
+                "curPage": 1,
+                "pageSize": 20,
+            }
+            headers = {
+                "Content-Type": "application/json;charset=UTF-8",
+                "token": token,
+                "Origin": "http://10.30.32.10",
+                "Referer": "http://10.30.32.10/",
+                "User-Agent": "Mozilla/5.0",
+            }
+            res = requests.post(url, json=data, headers=headers, timeout=(5, 10))
+            self.log(f"STATUS: {res.status_code}", "DWS9-11")
+            self.log(f"SIZE: {len(res.content)}", "DWS9-11")
+            if res.status_code == 200 and len(res.content) > 100:
+                os.makedirs(self.path.text(), exist_ok=True)
+                out = os.path.join(self.path.text(), self.name_dws.text())
+                with open(out, "wb") as f:
+                    f.write(res.content)
+                self.log(f"Downloaded: {self.name_dws.text()}")
+            else:
+                self.log(f"Download failed: {res.text[:200]}")
+                self.status.setText("Status: Error")
+        except Exception as e:
+            self.log(f"ERROR: {e}")
+            self.status.setText("Status: Error")
+        finally:
+            self.log("DWS finished", "SYS")
+
+    def run_jms_auto(self):
+        base = "https://jmsgw.jtexpress.co.th/operatingplatform"
+        token = self.jms_token.text().strip()
+        headers = {"Content-Type": "application/json;charset=UTF-8", "authtoken": token}
+        start, end = self.get_time_range()
+        self._export_jms(base, headers, start, end, "建包扫描", self.name_auto.text())
+
+    def run_jms_pda(self):
+        base = "https://jmsgw.jtexpress.co.th/operatingplatform"
+        token = self.jms_token.text().strip()
+        headers = {"Content-Type": "application/json;charset=UTF-8", "authtoken": token}
+        start, end = self.get_time_range()
+        self._export_jms(base, headers, start, end, "卸车扫描", self.name_dwspda.text())
+
+    def _export_jms(self, base, headers, start, end, scan_type, filename):
+        self.log(f"Generate {filename}", "JMS")
+        run_time = datetime.now()
+        target_hour = run_time.replace(minute=0, second=0, microsecond=0)
+        next_hour = target_hour + timedelta(hours=1)
+
+        res = requests.post(
+            f"{base}/scanningContrast/asyncDownExcel",
+            json={
+                "startTimeStr": start,
+                "endTimeStr": end,
+                "scanNetworkCode": "999004",
+                "scanType": scan_type,
+                "excelType": "downExcelAll",
+            },
+            headers=headers,
+            timeout=(5, 10),
+        )
+
+        if "login" in res.text.lower():
+            self.log("JMS Token expired (generate)", "ERROR")
+            raise Exception("Token expired")
+
+        if not self.sleep_with_stop(50):
+            return
+
+        for _ in range(10):
+            if self.stop_requested:
+                self.log("Stopped by user")
+                return
+
+            if not self.sleep_with_stop(10):
+                return
+
+            res = requests.post(
+                f"{base}/downLoadCenter/downLoadInfoList",
+                json={"current": 1, "size": 20},
+                headers=headers,
+                timeout=(5, 10),
+            )
+
+            if "login" in res.text.lower():
+                self.log("JMS Token expired (list)", "ERROR")
+                raise Exception("Token expired")
+
+            records = res.json().get("data", {}).get("records", [])
+            records.sort(key=lambda x: x.get("downTime", ""), reverse=True)
+
+            for r in records:
+                try:
+                    down_time = datetime.strptime(r.get("downTime"), "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    continue
+
+                self.log(f"Check: {r.get('downTime')} | finish={r.get('finishOrNot')}", "DEBUG")
+                if (
+                    scan_type in r.get("queryJson", "")
+                    and r.get("finishOrNot") == "1"
+                    and r.get("downUrl")
+                    and target_hour <= down_time < next_hour
+                    and down_time >= run_time - timedelta(minutes=7)
+                ):
+                    sign_res = requests.post(
+                        f"{base}/downLoadCenter/getDownloadSignedUrl",
+                        json=r,
+                        headers=headers,
+                        timeout=(5, 10),
+                    )
+                    if "login" in sign_res.text.lower():
+                        self.log("JMS Token expired (signedUrl)", "ERROR")
+                        raise Exception("Token expired")
+
+                    url = sign_res.json().get("data")
+                    if not url:
+                        continue
+
+                    file = requests.get(url if isinstance(url, str) else url[0], timeout=(5, 10))
+                    content_type = file.headers.get("Content-Type", "").lower()
+                    if "html" in content_type or "login" in file.text.lower():
+                        self.log("JMS Token expired (download)", "ERROR")
+                        raise Exception("Token expired")
+
+                    if len(file.content) < 100_000:
+                        self.log("File not ready, retry...", "JMS")
+                        continue
+
+                    os.makedirs(self.path.text(), exist_ok=True)
+                    out = os.path.join(self.path.text(), filename)
+                    with open(out, "wb") as f:
+                        f.write(file.content)
+                    self.log(f"Downloaded {filename}", "JMS")
+                    return
+
+        raise Exception(f"{filename} fail")
 
     def get_time_range(self):
         start_str = f"{self.start_date.date().toString('yyyy-MM-dd')} {self.start_hour.currentText()}"
@@ -251,177 +410,118 @@ class App(QMainWindow):
             time.sleep(1)
         return True
 
-    def run_dws(self):
-        self.log("Start DWS request...", "DWS9-11")
-        start, end = self.get_time_range()
-        try:
-            url = self.dws_url.text().strip()
-            token = self.dws_token.text().strip()
-            data = {"startTime": start, "endTime": end, "barcodeList": [], "businessTimeType": "", "dbCode": "2", "curPage": 1, "pageSize": 20}
-            headers = {"Content-Type": "application/json;charset=UTF-8", "token": token, "Origin": "http://10.30.32.10", "Referer": "http://10.30.32.10/", "User-Agent": "Mozilla/5.0"}
-            res = requests.post(url, json=data, headers=headers, timeout=60)
-            self.log(f"STATUS: {res.status_code}", "DWS9-11")
-            self.log(f"SIZE: {len(res.content)}", "DWS9-11")
-            if res.status_code == 200 and len(res.content) > 100:
-                os.makedirs(self.path.text(), exist_ok=True)
-                with open(os.path.join(self.path.text(), self.name_dws.text()), "wb") as f:
-                    f.write(res.content)
-                self.log(f"Downloaded: {self.name_dws.text()}")
-            else:
-                self.log(f"Download failed: {res.text[:200]}")
-                self.set_status("Status: Error")
-        except Exception as e:
-            self.log(f"ERROR: {e}")
-            self.set_status("Status: Error")
-        finally:
-            self.log("DWS finished", "SYS")
+    def main_loop(self):
+        self.log("Main loop started", "SYS")
+        run_minute = int(self.delay.currentText())
+        if self.next_run is None:
+            now = datetime.now()
+            self.next_run = now.replace(minute=run_minute, second=0, microsecond=0)
+            if now > self.next_run + timedelta(seconds=30):
+                self.next_run += timedelta(hours=1)
 
-    def _export_jms(self, base, headers, start, end, scanType, filename):
-        self.log(f"Generate {filename}", "JMS")
-        run_time = datetime.now()
-        target_hour = run_time.replace(minute=0, second=0, microsecond=0)
-        next_hour = target_hour + timedelta(hours=1)
-        requests.post(f"{base}/scanningContrast/asyncDownExcel", json={"startTimeStr": start, "endTimeStr": end, "scanNetworkCode": "999004", "scanType": scanType, "excelType": "downExcelAll"}, headers=headers)
-        if not self.sleep_with_stop(60):
-            return
-        for _ in range(12):
-            if self.stop_requested:
-                raise Exception("Stopped by user")
-            if not self.sleep_with_stop(10):
-                return
-            res = requests.post(f"{base}/downLoadCenter/downLoadInfoList", json={"current": 1, "size": 20}, headers=headers).json()
-            records = res.get("data", {}).get("records", [])
-            records.sort(key=lambda x: x.get("downTime", ""), reverse=True)
-            for r in records:
-                try:
-                    down_time = datetime.strptime(r.get("downTime"), "%Y-%m-%d %H:%M:%S")
-                except Exception:
-                    continue
-                if scanType in r.get("queryJson", "") and r.get("finishOrNot") == "1" and r.get("downUrl") and target_hour <= down_time < next_hour and down_time >= run_time - timedelta(minutes=7):
-                    sign = requests.post(f"{base}/downLoadCenter/getDownloadSignedUrl", json=r, headers=headers).json()
-                    url = sign.get("data")
-                    if not url:
-                        continue
-                    file = requests.get(url if isinstance(url, str) else url[0])
-                    if len(file.content) < 100_000:
-                        self.log("File not ready, retry...", "JMS")
-                        continue
-                    os.makedirs(self.path.text(), exist_ok=True)
-                    with open(os.path.join(self.path.text(), filename), "wb") as f:
-                        f.write(file.content)
-                    self.log(f"Downloaded {filename}", "JMS")
+        while self.scheduler_running:
+            self.log(f"Next run at {self.next_run.strftime('%H:%M:%S')}", "SYS")
+            while datetime.now() < self.next_run:
+                if not self.scheduler_running:
                     return
-        raise Exception(f"{filename} fail")
+                time.sleep(1)
 
-    def run_jms_auto(self):
-        base = "https://jmsgw.jtexpress.co.th/operatingplatform"
-        headers = {"Content-Type": "application/json;charset=UTF-8", "authtoken": self.jms_token.text().strip()}
-        start, end = self.get_time_range()
-        self._export_jms(base, headers, start, end, "建包扫描", self.name_auto.text())
+            if not self.job_running:
+                self.log("Run job", "SYS")
+                threading.Thread(target=self.execute_pipeline, daemon=True).start()
+            else:
+                self.log("Skip: previous job still running", "SYS")
+            self.next_run += timedelta(hours=1)
 
-    def run_jms_pda(self):
-        base = "https://jmsgw.jtexpress.co.th/operatingplatform"
-        headers = {"Content-Type": "application/json;charset=UTF-8", "authtoken": self.jms_token.text().strip()}
-        start, end = self.get_time_range()
-        self._export_jms(base, headers, start, end, "卸车扫描", self.name_dwspda.text())
+    def execute_pipeline(self):
+        if self.job_running:
+            self.log("Skip: job running", "SYS")
+            return
 
-    def run_all(self):
         self.job_running = True
         self.save_config()
-        self.set_ui(False)
-        self.set_status("Status: Running")
+        self._ui_call(lambda: self.set_ui(False))
+        self._ui_call(lambda: self.status.setText("Status: Running"))
+
         try:
             if self.stop_requested:
                 return
             self.run_dws()
-            if not self.sleep_with_stop(10):
-                return
             if self.stop_requested:
-                self.log("Stopped by user", "SYS")
                 return
+            if not self.sleep_with_stop(5):
+                raise Exception("Stopped")
             self.run_jms_auto()
-            if not self.sleep_with_stop(10):
+            if self.stop_requested:
                 return
+            if not self.sleep_with_stop(5):
+                raise Exception("Stopped")
             self.run_jms_pda()
-            if not self.stop_requested:
-                self.set_status("Status: Success")
+            self._ui_call(lambda: self.status.setText("Status: Success"))
         except Exception as e:
             self.log(f"ERROR: {e}", "SYS")
-            self.set_status("Status: Error")
+            self._ui_call(lambda: self.status.setText("Status: Error"))
         finally:
             self.job_running = False
+            self.stop_requested = False
+            if self.scheduler_running and self.next_run:
+                self.log("Finished", "SYS")
+                self.log(f"Next run at {self.next_run.strftime('%H:%M:%S')}", "SYS")
+            self._ui_call(lambda: self.btn_run.setText("Run Now"))
             if not self.scheduler_running:
-                self.set_ui(True)
-            self.btn_run.setText("Run Now")
-            if self.stop_requested:
-                self.set_status("Status: Stopped")
-
-    def validate(self):
-        return all([self.dws_url.text(), self.dws_token.text(), self.jms_token.text(), self.path.text()])
-
-    def validate_time(self):
-        start = datetime.strptime(f"{self.start_date.date().toString('yyyy-MM-dd')} {self.start_hour.currentText()}", "%Y-%m-%d %H:%M")
-        end = datetime.strptime(f"{self.end_date.date().toString('yyyy-MM-dd')} {self.end_hour.currentText()}", "%Y-%m-%d %H:%M")
-        return start <= end
-
-    def run_now(self):
-        if not self.validate():
-            self.log("Missing config", "SYS")
-            return
-        if not self.validate_time():
-            self.log("Invalid time range (Start > End)", "SYS")
-            return
-        if self.job_running:
-            return
-        threading.Thread(target=self.run_all, daemon=True).start()
-
-    def scheduler(self):
-        while self.scheduler_running:
-            now = datetime.now()
-            run_minute = int(self.delay.currentText())
-            target = now.replace(minute=run_minute, second=0, microsecond=0)
-            if now >= target:
-                target += timedelta(hours=1)
-            wait_seconds = int((target - now).total_seconds())
-            if wait_seconds <= 0:
-                time.sleep(1)
-                continue
-            self.log(f"Next run at {target.strftime('%H:%M:%S')}", "SYS")
-            for _ in range(wait_seconds):
-                if not self.scheduler_running:
-                    return
-                time.sleep(1)
-            if not self.validate():
-                self.log("Missing config", "SYS")
-                continue
-            if not self.job_running:
-                self.run_now()
+                self._ui_call(lambda: self.set_ui(True))
 
     def start(self):
         if self.scheduler_running:
             return
+        self.stop_requested = False
         self.scheduler_running = True
+        self.next_run = None
         self.set_ui(False)
-        threading.Thread(target=self.scheduler, daemon=True).start()
+        threading.Thread(target=self.main_loop, daemon=True).start()
         self.log("Auto scheduler started")
+        self.btn_start.setText("Stop")
 
     def stop(self):
         self.scheduler_running = False
         self.stop_requested = True
-        self.set_status("Status: Stopped")
+        self.status.setText("Status: Stopped")
         self.set_ui(True)
         self.btn_start.setText("Start")
         self.btn_run.setText("Run Now")
 
     def set_ui(self, enable):
-        for w in [self.dws_url, self.dws_token, self.jms_token, self.path, self.start_date, self.end_date, self.start_hour, self.end_hour, self.delay, self.name_dws, self.name_auto, self.name_dwspda, self.btn_browse]:
+        for w in [
+            self.dws_url,
+            self.dws_token,
+            self.jms_token,
+            self.path,
+            self.start_date,
+            self.end_date,
+            self.start_hour,
+            self.end_hour,
+            self.delay,
+            self.name_dws,
+            self.name_auto,
+            self.name_dwspda,
+            self.btn_browse,
+        ]:
             w.setEnabled(enable)
+
         self.btn_run.setEnabled(True)
         self.btn_start.setEnabled(True)
+
+    def validate(self):
+        return all([
+            self.dws_url.text().strip(),
+            self.dws_token.text().strip(),
+            self.jms_token.text().strip(),
+            self.path.text().strip(),
+        ])
 
 
 if __name__ == "__main__":
     app = QApplication([])
-    window = App()
-    window.show()
+    win = App()
+    win.show()
     app.exec()
