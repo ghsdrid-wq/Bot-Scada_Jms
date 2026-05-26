@@ -1,6 +1,5 @@
 # Bot Export Scada & JMS
-<img width="649" height="479" alt="image" src="https://github.com/user-attachments/assets/6855c809-f816-403f-b87c-52223e9e5ace" />
-<img width="649" height="479" alt="image" src="https://github.com/user-attachments/assets/f305bc17-494a-4b5a-987a-94dfd9570308" />
+<img width="1424" height="856" alt="image" src="https://github.com/user-attachments/assets/72501792-87b0-4f41-ad33-db5bbeacccab" />
 
 Python desktop application สำหรับ export และ download report จากระบบ DWS Scada และ JMS ผ่าน API อัตโนมัติ พร้อมระบบ Scheduler, Multi-Task Export, GUI Monitoring และ File Download Automation
 
