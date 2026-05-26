@@ -32,7 +32,7 @@ class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Bot Export Scada&Jms")
-        self.setFixedSize(750, 450)
+        self.setFixedSize(950, 550)
         self.scheduler_running = False
         self.job_running = False
         self.stop_requested = False
@@ -103,14 +103,14 @@ class App(QMainWindow):
 
     def create_ui(self):
         self.apply_modern_theme()
-        tabs = QTabWidget()
-        self.setCentralWidget(tabs)
-
+        self.tabs = QTabWidget()
+        self.setCentralWidget(self.tabs)
+        
         self.tab_home = QWidget()
         self.tab_setting = QWidget()
 
-        tabs.addTab(self.tab_home, "Home")
-        tabs.addTab(self.tab_setting, "Setting")
+        self.tabs.addTab(self.tab_home, "Home")
+        self.tabs.addTab(self.tab_setting, "Setting")
 
         self.build_home()
         self.build_setting()
@@ -175,11 +175,13 @@ class App(QMainWindow):
         form.addWidget(self.end_hour, 1, 6)
 
         self.btn_start = QPushButton("Start")
+        self.btn_start.setFixedWidth(90)
         self.btn_start.setObjectName("primaryButton")
         self.btn_start.clicked.connect(self.toggle_start)
         form.addWidget(self.btn_start, 1, 7)
 
         self.btn_run = QPushButton("Run Now")
+        self.btn_run.setFixedWidth(90)
         self.btn_run.setObjectName("accentButton")
         self.btn_run.clicked.connect(self.toggle_run)
         form.addWidget(self.btn_run, 1, 8)
@@ -232,22 +234,95 @@ class App(QMainWindow):
     def apply_modern_theme(self):
         self.setStyleSheet(
             """
-            QWidget { background-color: #f6f8fc; color: #1f2937; font-size: 13px; }
-            QTabWidget::pane { border: 1px solid #dbe3ef; background: #ffffff; border-radius: 12px; }
-            QTabBar::tab { background: #e9eef9; border: none; padding: 8px 16px; margin-right: 6px; border-top-left-radius: 10px; border-top-right-radius: 10px; }
-            QTabBar::tab:selected { background: #ffffff; color: #0f172a; font-weight: 600; }
-            QGroupBox { border: 1px solid #dbe3ef; border-radius: 10px; margin-top: 10px; padding-top: 10px; background: #ffffff; font-weight: 600; }
-            QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; color: #334155; }
-            QLineEdit, QComboBox, QDateEdit, QTextEdit { border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 9px; background: #ffffff; }
-            QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTextEdit:focus { border: 1px solid #6366f1; }
-            QPushButton { border: none; border-radius: 8px; padding: 8px 14px; background: #e2e8f0; color: #0f172a; font-weight: 600; }
-            QPushButton:hover { background: #cbd5e1; }
-            QPushButton#primaryButton { background: #2563eb; color: #ffffff; }
-            QPushButton#primaryButton:hover { background: #1d4ed8; }
-            QPushButton#accentButton { background: #0ea5e9; color: #ffffff; }
-            QPushButton#accentButton:hover { background: #0284c7; }
-            QLabel#pageTitle { font-size: 20px; font-weight: 700; color: #0f172a; }
-            QLabel#statusBadge { background: #e2e8f0; color: #0f172a; border-radius: 12px; padding: 5px 12px; font-weight: 600; }
+            QWidget { 
+                background-color: #f6f8fc; 
+                color: #1f2937; 
+                font-size: 13px; 
+            }
+            QTabWidget::pane { 
+                border: 1px solid #dbe3ef; 
+                background: #ffffff; 
+                border-radius: 12px; 
+            }
+            QTabBar::tab { 
+                background: #e9eef9; 
+                border: none; padding: 8px 16px; 
+                margin-right: 6px; 
+                border-top-left-radius: 10px; 
+                border-top-right-radius: 10px; 
+            }
+            QTabBar::tab:selected { 
+                background: #ffffff; 
+                color: #0f172a; 
+                font-weight: 600; 
+            }
+            QTabBar::tab:disabled {
+                background: #d1d5db;
+                color: #94a3b8;
+            }
+            QGroupBox { 
+                border: 1px solid #dbe3ef; 
+                border-radius: 10px; margin-top: 10px; 
+                padding-top: 10px; background: #ffffff; 
+                font-weight: 600; 
+            }
+            QGroupBox::title { 
+                subcontrol-origin: margin; 
+                left: 12px; padding: 0 6px; 
+                color: #334155; 
+            }
+            QLineEdit, QComboBox, QDateEdit, QTextEdit { 
+                border: 1px solid #cbd5e1; 
+                border-radius: 8px; 
+                padding: 7px 9px; 
+                background: #ffffff; 
+            }
+            QLineEdit:disabled,
+            QComboBox:disabled,
+            QDateEdit:disabled,
+            QTextEdit:disabled {
+                background-color: #e5e7eb;
+                color: #94a3b8;
+                border: 1px solid #d1d5db;
+            }
+            QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTextEdit:focus { 
+                border: 1px solid #6366f1; 
+            }
+            QPushButton { 
+                border: none; 
+                border-radius: 8px; 
+                padding: 8px 14px; 
+                background: #e2e8f0; 
+                color: #0f172a; 
+                font-weight: 600; 
+            }
+            QPushButton:hover { 
+                background: #cbd5e1; 
+            }
+            QPushButton#primaryButton { 
+                background: #2563eb; color: #ffffff; 
+            }
+            QPushButton#primaryButton:hover { 
+                background: #1d4ed8; 
+            }
+            QPushButton#accentButton { 
+                background: #0ea5e9; color: #ffffff; 
+            }
+            QPushButton#accentButton:hover { 
+                background: #0284c7; 
+            }
+            QLabel#pageTitle { 
+                font-size: 20px; 
+                ont-weight: 700; 
+                color: #0f172a; 
+            }
+            QLabel#statusBadge { 
+                background: #e2e8f0; 
+                color: #0f172a; 
+                border-radius: 12px; 
+                padding: 5px 12px; 
+                font-weight: 600; 
+            }
             """
         )
 
@@ -485,6 +560,7 @@ class App(QMainWindow):
     def set_ui(self, enable):
         for w in [self.dws_url, self.dws_token, self.jms_token, self.path, self.start_date, self.end_date, self.start_hour, self.end_hour, self.delay, self.name_dws, self.name_auto, self.name_dwspda, self.btn_browse]:
             w.setEnabled(enable)
+        self.tabs.setTabEnabled(1, enable)
         self.btn_run.setEnabled(True)
         self.btn_start.setEnabled(True)
 
