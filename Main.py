@@ -102,6 +102,7 @@ class App(QMainWindow):
             self.delay.setCurrentIndex(idx)
 
     def create_ui(self):
+        self.apply_modern_theme()
         tabs = QTabWidget()
         self.setCentralWidget(tabs)
 
@@ -116,11 +117,23 @@ class App(QMainWindow):
 
     def build_home(self):
         root = QVBoxLayout(self.tab_home)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
+
+        header = QHBoxLayout()
+        title = QLabel("Export Dashboard")
+        title.setObjectName("pageTitle")
         self.status = QLabel("Status: Idle")
-        root.addWidget(self.status)
+        self.status.setObjectName("statusBadge")
+        header.addWidget(title)
+        header.addStretch()
+        header.addWidget(self.status)
+        root.addLayout(header)
 
         form_wrap = QWidget()
         form = QGridLayout(form_wrap)
+        form.setHorizontalSpacing(10)
+        form.setVerticalSpacing(10)
         root.addWidget(form_wrap)
 
         hours = [f"{i:02d}:00" for i in range(24)]
@@ -138,6 +151,7 @@ class App(QMainWindow):
         self.start_date.setCalendarPopup(True)
         self.start_date.setDisplayFormat("yyyy-MM-dd")
         self.start_date.setDate(QDate.currentDate())
+        self.start_date.setMinimumWidth(170)
         form.addWidget(self.start_date, 1, 1)
 
         self.start_hour = QComboBox()
@@ -152,6 +166,7 @@ class App(QMainWindow):
         self.end_date.setCalendarPopup(True)
         self.end_date.setDisplayFormat("yyyy-MM-dd")
         self.end_date.setDate(QDate.currentDate().addDays(1))
+        self.end_date.setMinimumWidth(170)
         form.addWidget(self.end_date, 1, 5)
 
         self.end_hour = QComboBox()
@@ -160,19 +175,24 @@ class App(QMainWindow):
         form.addWidget(self.end_hour, 1, 6)
 
         self.btn_start = QPushButton("Start")
+        self.btn_start.setObjectName("primaryButton")
         self.btn_start.clicked.connect(self.toggle_start)
         form.addWidget(self.btn_start, 1, 7)
 
         self.btn_run = QPushButton("Run Now")
+        self.btn_run.setObjectName("accentButton")
         self.btn_run.clicked.connect(self.toggle_run)
         form.addWidget(self.btn_run, 1, 8)
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
+        self.log_text.setPlaceholderText("System logs will appear here...")
         root.addWidget(self.log_text)
 
     def build_setting(self):
         root = QVBoxLayout(self.tab_setting)
+        root.setContentsMargins(16, 16, 16, 16)
+        root.setSpacing(12)
 
         dws_group = QGroupBox("DWS9-11")
         dws_form = QFormLayout(dws_group)
@@ -194,6 +214,7 @@ class App(QMainWindow):
         self.path = QLineEdit()
         path_layout.addWidget(self.path)
         self.btn_browse = QPushButton("Browse")
+        self.btn_browse.setObjectName("primaryButton")
         self.btn_browse.clicked.connect(self.browse)
         path_layout.addWidget(self.btn_browse)
         root.addWidget(path_group)
@@ -207,6 +228,28 @@ class App(QMainWindow):
         output_form.addRow("AUTOPDA File", self.name_auto)
         output_form.addRow("DWSPDA File", self.name_dwspda)
         root.addWidget(output_group)
+
+    def apply_modern_theme(self):
+        self.setStyleSheet(
+            """
+            QWidget { background-color: #f6f8fc; color: #1f2937; font-size: 13px; }
+            QTabWidget::pane { border: 1px solid #dbe3ef; background: #ffffff; border-radius: 12px; }
+            QTabBar::tab { background: #e9eef9; border: none; padding: 8px 16px; margin-right: 6px; border-top-left-radius: 10px; border-top-right-radius: 10px; }
+            QTabBar::tab:selected { background: #ffffff; color: #0f172a; font-weight: 600; }
+            QGroupBox { border: 1px solid #dbe3ef; border-radius: 10px; margin-top: 10px; padding-top: 10px; background: #ffffff; font-weight: 600; }
+            QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 6px; color: #334155; }
+            QLineEdit, QComboBox, QDateEdit, QTextEdit { border: 1px solid #cbd5e1; border-radius: 8px; padding: 7px 9px; background: #ffffff; }
+            QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTextEdit:focus { border: 1px solid #6366f1; }
+            QPushButton { border: none; border-radius: 8px; padding: 8px 14px; background: #e2e8f0; color: #0f172a; font-weight: 600; }
+            QPushButton:hover { background: #cbd5e1; }
+            QPushButton#primaryButton { background: #2563eb; color: #ffffff; }
+            QPushButton#primaryButton:hover { background: #1d4ed8; }
+            QPushButton#accentButton { background: #0ea5e9; color: #ffffff; }
+            QPushButton#accentButton:hover { background: #0284c7; }
+            QLabel#pageTitle { font-size: 20px; font-weight: 700; color: #0f172a; }
+            QLabel#statusBadge { background: #e2e8f0; color: #0f172a; border-radius: 12px; padding: 5px 12px; font-weight: 600; }
+            """
+        )
 
     def toggle_start(self):
         if not self.scheduler_running:
