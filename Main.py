@@ -1,19 +1,24 @@
 import tkinter as tk
-from tkinter import ttk, filedialog
+from tkinter import filedialog
 import threading, time
 from tkcalendar import DateEntry
 from datetime import datetime, timedelta
 import requests
 import os
 import configparser
+import customtkinter as ctk
 
 CONFIG_FILE = "config.ini"
 
-class App(tk.Tk):
+ctk.set_appearance_mode("dark")
+ctk.set_default_color_theme("blue")
+
+
+class App(ctk.CTk):
     def __init__(self):
         super().__init__()
         self.title("Bot Export Scada&Jms")
-        self.geometry("650x450")
+        self.geometry("900x560")
         self.resizable(False, False)
         self.scheduler_running = False
         self.job_running = False
@@ -104,14 +109,21 @@ class App(tk.Tk):
 
     # ===== UI =====
     def create_ui(self):
-        notebook = ttk.Notebook(self)
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=12, pady=12)
+
+        title = ctk.CTkLabel(
+            container,
+            text="Bot Export Scada & JMS",
+            font=ctk.CTkFont(size=24, weight="bold")
+        )
+        title.pack(anchor="w", pady=(0, 8))
+
+        notebook = ctk.CTkTabview(container, width=860, height=500)
         notebook.pack(fill="both", expand=True)
 
-        self.tab_home = ttk.Frame(notebook)
-        self.tab_setting = ttk.Frame(notebook)
-
-        notebook.add(self.tab_home, text="Home")
-        notebook.add(self.tab_setting, text="Setting")
+        self.tab_home = notebook.add("Home")
+        self.tab_setting = notebook.add("Setting")
 
         self.build_home()
         self.build_setting()
@@ -121,37 +133,37 @@ class App(tk.Tk):
         f = self.tab_home
 
         # ===== ROW 1 : STATUS =====
-        self.status = ttk.Label(f, text="Status: Idle")
-        self.status.pack(anchor="w", padx=10, pady=5)
+        self.status = ctk.CTkLabel(f, text="Status: Idle", font=ctk.CTkFont(size=14, weight="bold"))
+        self.status.pack(anchor="w", padx=16, pady=(14, 8))
 
         # ===== FRAME =====
-        frame = ttk.Frame(f)
-        frame.pack(anchor="w", padx=10, pady=5)
+        frame = ctk.CTkFrame(f)
+        frame.pack(fill="x", padx=16, pady=8)
 
         # ===== DATA =====
         hours = [f"{i:02d}:00" for i in range(24)]
         minutes = [str(i) for i in range(60)]
 
         # ===== ROW 2 : RUN MINUTE =====
-        ttk.Label(frame, text="Run minute").grid(row=0, column=0, sticky="w")
+        ctk.CTkLabel(frame, text="Run minute").grid(row=0, column=0, sticky="w", padx=8, pady=8)
 
-        self.delay = ttk.Combobox(frame, values=minutes, width=5, state="readonly")
-        self.delay.grid(row=0, column=1, padx=5)
+        self.delay = ctk.CTkComboBox(frame, values=minutes, width=80, state="readonly")
+        self.delay.grid(row=0, column=1, padx=8, pady=8, sticky="w")
         self.delay.set("5")
 
         # ===== ROW : START → END + BUTTON =====
-        ttk.Label(frame, text="Start").grid(row=1, column=0, sticky="w")
+        ctk.CTkLabel(frame, text="Start").grid(row=1, column=0, sticky="w", padx=8, pady=8)
 
         self.start_date = DateEntry(frame, width=12, date_pattern="yyyy-mm-dd", state="readonly")
         self.start_date.grid(row=1, column=1)
 
-        self.start_hour = ttk.Combobox(frame, values=hours, width=5, state="readonly")
-        self.start_hour.grid(row=1, column=2)
+        self.start_hour = ctk.CTkComboBox(frame, values=hours, width=90, state="readonly")
+        self.start_hour.grid(row=1, column=2, padx=8)
         self.start_hour.set("13:00")
 
-        ttk.Label(frame, text="→").grid(row=1, column=3, padx=5)
+        ctk.CTkLabel(frame, text="→").grid(row=1, column=3, padx=8)
 
-        ttk.Label(frame, text="End").grid(row=1, column=4)
+        ctk.CTkLabel(frame, text="End").grid(row=1, column=4, padx=8)
 
         self.end_date = DateEntry(frame, width=12, date_pattern="yyyy-mm-dd", state="readonly")
         self.end_date.grid(row=1, column=5)
@@ -161,86 +173,82 @@ class App(tk.Tk):
         self.start_date.set_date(today)
         self.end_date.set_date(today + timedelta(days=1))
         
-        self.end_hour = ttk.Combobox(frame, values=hours, width=5, state="readonly")
-        self.end_hour.grid(row=1, column=6)
+        self.end_hour = ctk.CTkComboBox(frame, values=hours, width=90, state="readonly")
+        self.end_hour.grid(row=1, column=6, padx=8)
         self.end_hour.set("23:00")
 
         # ===== BUTTON =====
-        self.btn_start = ttk.Button(frame, text="Start", command=self.toggle_start)
+        self.btn_start = ctk.CTkButton(frame, text="Start", command=self.toggle_start, width=100)
         self.btn_start.grid(row=1, column=7, padx=10)
 
-        self.btn_run = ttk.Button(frame, text="Run Now", command=self.toggle_run)
+        self.btn_run = ctk.CTkButton(frame, text="Run Now", command=self.toggle_run, width=110)
         self.btn_run.grid(row=1, column=8)
 
         # ===== LOG FRAME =====
-        log_frame = ttk.Frame(f)
-        log_frame.pack(fill="both", expand=True, padx=10, pady=5)
+        log_frame = ctk.CTkFrame(f)
+        log_frame.pack(fill="both", expand=True, padx=16, pady=(8, 16))
 
-        # Scrollbar
-        scrollbar = ttk.Scrollbar(log_frame)
-        scrollbar.pack(side="right", fill="y")
-
-        # Text (log)
-        self.log_text = tk.Text(log_frame, height=18, yscrollcommand=scrollbar.set)
-        self.log_text.pack(side="left", fill="both", expand=True)
-
-        # connect
-        scrollbar.config(command=self.log_text.yview)
+        self.log_text = ctk.CTkTextbox(log_frame, height=300)
+        self.log_text.pack(fill="both", expand=True, padx=8, pady=8)
 
     # ===== SETTING =====
     def build_setting(self):
         f = self.tab_setting
 
         # ===== DWS FRAME =====
-        dws_frame = ttk.LabelFrame(f, text="DWS9-11", padding=10)
+        dws_frame = ctk.CTkFrame(f)
         dws_frame.grid(row=0, column=0, padx=10, pady=10, sticky="ew")
         dws_frame.columnconfigure(1, weight=1)
+        ctk.CTkLabel(dws_frame, text="DWS9-11", font=ctk.CTkFont(size=15, weight="bold")).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
 
-        ttk.Label(dws_frame, text="API URL").grid(row=0, column=0, sticky="w")
-        self.dws_url = ttk.Entry(dws_frame, width=50)
-        self.dws_url.grid(row=0, column=1, pady=5, sticky="ew")
+        ctk.CTkLabel(dws_frame, text="API URL").grid(row=1, column=0, sticky="w", padx=10, pady=5)
+        self.dws_url = ctk.CTkEntry(dws_frame, width=50)
+        self.dws_url.grid(row=1, column=1, pady=5, padx=(0, 10), sticky="ew")
 
-        ttk.Label(dws_frame, text="Token").grid(row=1, column=0, sticky="w")
-        self.dws_token = ttk.Entry(dws_frame, width=50)
-        self.dws_token.grid(row=1, column=1, pady=5, sticky="ew")
+        ctk.CTkLabel(dws_frame, text="Token").grid(row=2, column=0, sticky="w", padx=10, pady=(0, 10))
+        self.dws_token = ctk.CTkEntry(dws_frame, width=50)
+        self.dws_token.grid(row=2, column=1, pady=(0, 10), padx=(0, 10), sticky="ew")
 
         # ===== JMS FRAME =====
-        jms_frame = ttk.LabelFrame(f, text="JMS", padding=10)
+        jms_frame = ctk.CTkFrame(f)
         jms_frame.grid(row=1, column=0, padx=10, pady=10, sticky="ew")
         jms_frame.columnconfigure(1, weight=1)
+        ctk.CTkLabel(jms_frame, text="JMS", font=ctk.CTkFont(size=15, weight="bold")).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
 
-        ttk.Label(jms_frame, text="AuthToken").grid(row=0, column=0, sticky="w")
-        self.jms_token = ttk.Entry(jms_frame, width=50)
-        self.jms_token.grid(row=0, column=1, pady=5, sticky="ew")
+        ctk.CTkLabel(jms_frame, text="AuthToken").grid(row=1, column=0, sticky="w", padx=10, pady=(5, 10))
+        self.jms_token = ctk.CTkEntry(jms_frame, width=50)
+        self.jms_token.grid(row=1, column=1, pady=(5, 10), padx=(0, 10), sticky="ew")
 
         # ===== PATH FRAME =====
-        path_frame = ttk.LabelFrame(f, text="Output", padding=10)
+        path_frame = ctk.CTkFrame(f)
         path_frame.grid(row=2, column=0, padx=10, pady=10, sticky="ew")
         path_frame.columnconfigure(1, weight=1)
+        ctk.CTkLabel(path_frame, text="Output", font=ctk.CTkFont(size=15, weight="bold")).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
 
-        ttk.Label(path_frame, text="Save Path").grid(row=0, column=0, sticky="w")
-        self.path = ttk.Entry(path_frame, width=45)
-        self.path.grid(row=0, column=1, pady=5, sticky="ew")
+        ctk.CTkLabel(path_frame, text="Save Path").grid(row=1, column=0, sticky="w", padx=10, pady=(5, 10))
+        self.path = ctk.CTkEntry(path_frame, width=45)
+        self.path.grid(row=1, column=1, pady=(5, 10), sticky="ew")
 
-        self.btn_browse = ttk.Button(path_frame, text="Browse", command=self.browse)
-        self.btn_browse.grid(row=0, column=2, padx=5)
+        self.btn_browse = ctk.CTkButton(path_frame, text="Browse", command=self.browse, width=90)
+        self.btn_browse.grid(row=1, column=2, padx=8, pady=(5, 10))
 
         # ===== OUTPUT FRAME =====
-        output_frame = ttk.LabelFrame(f, text="PATH", padding=10)
+        output_frame = ctk.CTkFrame(f)
         output_frame.grid(row=3, column=0, padx=10, pady=10, sticky="ew")
         output_frame.columnconfigure(1, weight=1)
+        ctk.CTkLabel(output_frame, text="File Names", font=ctk.CTkFont(size=15, weight="bold")).grid(row=0, column=0, sticky="w", padx=10, pady=(10, 0))
 
-        ttk.Label(output_frame, text="DWS File").grid(row=1, column=0)
-        self.name_dws = ttk.Entry(output_frame, width=45)
-        self.name_dws.grid(row=1, column=1, sticky="ew")
+        ctk.CTkLabel(output_frame, text="DWS File").grid(row=1, column=0, padx=10, pady=5, sticky="w")
+        self.name_dws = ctk.CTkEntry(output_frame, width=45)
+        self.name_dws.grid(row=1, column=1, padx=(0, 10), sticky="ew")
 
-        ttk.Label(output_frame, text="AUTOPDA File").grid(row=2, column=0)
-        self.name_auto = ttk.Entry(output_frame, width=45)
-        self.name_auto.grid(row=2, column=1, sticky="ew")
+        ctk.CTkLabel(output_frame, text="AUTOPDA File").grid(row=2, column=0, padx=10, pady=5, sticky="w")
+        self.name_auto = ctk.CTkEntry(output_frame, width=45)
+        self.name_auto.grid(row=2, column=1, padx=(0, 10), sticky="ew")
 
-        ttk.Label(output_frame, text="DWSPDA File").grid(row=3, column=0)
-        self.name_dwspda = ttk.Entry(output_frame, width=45)
-        self.name_dwspda.grid(row=3, column=1, sticky="ew")
+        ctk.CTkLabel(output_frame, text="DWSPDA File").grid(row=3, column=0, padx=10, pady=(5, 10), sticky="w")
+        self.name_dwspda = ctk.CTkEntry(output_frame, width=45)
+        self.name_dwspda.grid(row=3, column=1, padx=(0, 10), pady=(5, 10), sticky="ew")
         # ให้ stretch
         f.columnconfigure(0, weight=1)
 
