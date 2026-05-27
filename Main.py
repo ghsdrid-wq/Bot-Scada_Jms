@@ -32,7 +32,7 @@ class App(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Bot Export Scada&Jms")
-        self.setFixedSize(950, 550)
+        self.setFixedSize(950, 650)
         self.scheduler_running = False
         self.job_running = False
         self.stop_requested = False
@@ -55,15 +55,16 @@ class App(QMainWindow):
 
         cfg["FILE"] = {
             "name_dws": self.name_dws.text() or "DWS9-11.xlsx",
-            "name_auto": self.name_auto.text() or "DWSXAUTOPDA.xlsx",
             "name_dwspda": self.name_dwspda.text() or "DWSPDA.xlsx",
+            "name_realtime_db": self.name_realtime_db.text() or "RealtimeDB.xlsx",
+
         }
 
         cfg["TIME"] = {
             "run_minute": self.delay.currentText() or "5"
         }
 
-        with open(CONFIG_FILE, "w") as f:
+        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             cfg.write(f)
 
     def load_config(self):
@@ -76,12 +77,14 @@ class App(QMainWindow):
                 "name_dws": "DWS9-11.xlsx",
                 "name_auto": "DWSXAUTOPDA.xlsx",
                 "name_dwspda": "DWSPDA.xlsx",
+                "name_realtime_db": "RealtimeDB.xlsx",
+
             }
             cfg["TIME"] = {"run_minute": "5"}
-            with open(CONFIG_FILE, "w") as f:
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
                 cfg.write(f)
 
-        cfg.read(CONFIG_FILE)
+        cfg.read(CONFIG_FILE, encoding="utf-8")
 
         a = cfg["API"] if cfg.has_section("API") else {}
         self.dws_url.setText(a.get("dws_url", ""))
@@ -95,6 +98,7 @@ class App(QMainWindow):
         self.name_dws.setText(f.get("name_dws", "DWS9-11.xlsx"))
         self.name_auto.setText(f.get("name_auto", "DWSXAUTOPDA.xlsx"))
         self.name_dwspda.setText(f.get("name_dwspda", "DWSPDA.xlsx"))
+        self.name_realtime_db.setText(f.get("name_realtime_db", "RealtimeDB.xlsx"))
 
         t = cfg["TIME"] if cfg.has_section("TIME") else {}
         idx = self.delay.findText(t.get("run_minute", "5"))
@@ -226,9 +230,11 @@ class App(QMainWindow):
         self.name_dws = QLineEdit()
         self.name_auto = QLineEdit()
         self.name_dwspda = QLineEdit()
+        self.name_realtime_db = QLineEdit()
         output_form.addRow("DWS File", self.name_dws)
         output_form.addRow("AUTOPDA File", self.name_auto)
         output_form.addRow("DWSPDA File", self.name_dwspda)
+        output_form.addRow("Realtime DB File",self.name_realtime_db)
         root.addWidget(output_group)
 
     def apply_modern_theme(self):
@@ -394,6 +400,168 @@ class App(QMainWindow):
         start, end = self.get_time_range()
         self._export_jms(base, headers, start, end, "卸车扫描", self.name_dwspda.text())
 
+    def run_realtime_db(self):
+        self.log("Generate Realtime DB", "REALTIME")
+
+        token = self.jms_token.text().strip()
+
+        headers = {
+            "Content-Type": "application/json;charset=UTF-8",
+            "authtoken": token,
+            "origin": "https://jms.jtexpress.co.th",
+            "referer": "https://jms.jtexpress.co.th/",
+            "routename": "TrackRealTimeMonitoringDB",
+            "lang": "TH",
+            "langtype": "TH",
+        }
+
+        base = "https://jmsgw.jtexpress.co.th"
+
+        # ==========================================
+        # STEP 1
+        # CREATE EXPORT
+        # ==========================================
+
+        export_url = (
+            f"{base}"
+            "/businessindicator/bigdataReport/"
+            "pageExcelByTask/trail_monitor_detail_doris"
+        )
+
+        export_payload = {
+            "orderSourceCode": ["JMS"],
+            "scanCode": "999004",
+            "scanFranCode": "555090",
+            "scanAgentCode": "555090",
+            "countryId": "1",
+            "modelName": "ควบคุมติดตามแบบเรียลไทม์DB(รายละเอียด)"
+        }
+
+        res = requests.post(
+            export_url,
+            json=export_payload,
+            headers=headers,
+            timeout=(5, 10)
+        )
+
+        if "login" in res.text.lower():
+            raise Exception("Realtime DB token expired")
+
+        self.log("Create export success", "REALTIME")
+
+        if not self.sleep_with_stop(20):
+            return
+
+        # ==========================================
+        # STEP 2
+        # CHECK FILE LIST
+        # ==========================================
+
+        list_url = (
+            f"{base}"
+            "/businessindicator/bigdataReport/report/file/list"
+        )
+
+        today = datetime.now()
+
+        list_payload = {
+            "current": 1,
+            "size": 20,
+            "startTime": today.strftime("%Y-%m-%d 00:00:00"),
+            "endTime": today.strftime("%Y-%m-%d 23:59:59"),
+            "countryId": "1",
+            "networkCode": "999004",
+            "userId": 13144940
+        }
+
+        download_url = None
+
+        for _ in range(10):
+
+            if self.stop_requested:
+                return
+
+            res = requests.post(
+                list_url,
+                json=list_payload,
+                headers=headers,
+                timeout=(5, 10)
+            )
+
+            if "login" in res.text.lower():
+                raise Exception("Realtime DB token expired")
+
+            data = res.json()
+
+            records = data.get("data", {}).get("list", [])
+
+            records.sort(
+                key=lambda x: x.get("createTime", ""),
+                reverse=True
+            )
+
+            for record in records:
+
+                status = record.get("status")
+                down_url = record.get("downUrl")
+                business = record.get("business", "")
+
+                if (
+                    status == 2
+                    and down_url
+                    and business == "trail_monitor_detail_doris"
+                ):
+
+                    download_url = down_url
+
+                    self.log(
+                        "Found download url",
+                        "REALTIME"
+                    )
+
+                    break
+
+            if download_url:
+                break
+
+            self.log(
+                "Waiting file generate...",
+                "REALTIME"
+            )
+
+            if not self.sleep_with_stop(10):
+                return
+
+        if not download_url:
+            raise Exception("Realtime DB download url not found")
+
+        # ==========================================
+        # STEP 3
+        # DOWNLOAD FILE
+        # ==========================================
+
+        file = requests.get(
+            download_url,
+            timeout=(5, 30)
+        )
+
+        if len(file.content) < 1000:
+            raise Exception("Realtime DB file invalid")
+
+        os.makedirs(self.path.text(), exist_ok=True)
+
+        save_path = os.path.join(
+            self.path.text(),
+            self.name_realtime_db.text()
+        )
+
+        with open(save_path, "wb") as f:
+            f.write(file.content)
+
+        self.log(
+            f"Downloaded {self.name_realtime_db.text()}",
+            "REALTIME"
+        )
     def _export_jms(self, base, headers, start, end, scanType, filename):
         self.log(f"Generate {filename}", "JMS")
         run_time = datetime.now()
@@ -524,6 +692,14 @@ class App(QMainWindow):
             if self.stop_requested:
                 return
             self.run_jms_pda()
+            if self.stop_requested:
+                return
+
+            if not self.sleep_with_stop(5):
+                raise Exception("Stopped")
+
+            self.run_realtime_db()
+
             self.status.setText("Status: Success")
         except Exception as e:
             self.log(f"ERROR: {e}", "SYS")
@@ -558,7 +734,7 @@ class App(QMainWindow):
         self.btn_run.setText("Run Now")
 
     def set_ui(self, enable):
-        for w in [self.dws_url, self.dws_token, self.jms_token, self.path, self.start_date, self.end_date, self.start_hour, self.end_hour, self.delay, self.name_dws, self.name_auto, self.name_dwspda, self.btn_browse]:
+        for w in [self.dws_url, self.dws_token, self.jms_token, self.path, self.start_date, self.end_date, self.start_hour, self.end_hour, self.delay, self.name_dws, self.name_auto, self.name_dwspda,self.name_realtime_db, self.btn_browse]:
             w.setEnabled(enable)
         self.tabs.setTabEnabled(1, enable)
         self.btn_run.setEnabled(True)
