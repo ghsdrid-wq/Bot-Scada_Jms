@@ -449,7 +449,7 @@ class App(QMainWindow):
 
         self.log("Create export success", "REALTIME")
 
-        if not self.sleep_with_stop(20):
+        if not self.sleep_with_stop(60):
             return
 
         # ==========================================
@@ -476,7 +476,7 @@ class App(QMainWindow):
 
         download_url = None
 
-        for _ in range(10):
+        for _ in range(30):
 
             if self.stop_requested:
                 return
@@ -573,7 +573,7 @@ class App(QMainWindow):
             raise Exception("Token expired")
         if not self.sleep_with_stop(50):
             return
-        for _ in range(10):
+        for _ in range(30):
             if self.stop_requested:
                 self.log("Stopped by user")
                 return
@@ -592,7 +592,13 @@ class App(QMainWindow):
                 except:
                     continue
                 self.log(f"Check: {r.get('downTime')} | finish={r.get('finishOrNot')}", "DEBUG")
-                if (scanType in r.get("queryJson", "") and r.get("finishOrNot") == "1" and r.get("downUrl") and target_hour <= down_time < next_hour and down_time >= run_time - timedelta(minutes=7)):
+
+                if (
+                    scanType in r.get("queryJson", "")
+                    and r.get("finishOrNot") == "1"
+                    and r.get("downUrl")
+                    and down_time >= run_time - timedelta(hours=1)
+                ):
                     self.log(f"Matched file: {down_time}", "DEBUG")
                     sign_res = requests.post(f"{base}/downLoadCenter/getDownloadSignedUrl", json=r, headers=headers, timeout=(5, 10))
                     if "login" in sign_res.text.lower():
